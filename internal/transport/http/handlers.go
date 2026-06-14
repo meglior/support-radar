@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/support-radar/server/internal/config"
-	"github.com/support-radar/server/internal/domain"
-	"github.com/support-radar/server/internal/repository/postgres"
-	"github.com/support-radar/server/internal/repository/redis"
-	"github.com/support-radar/server/internal/service"
-	"github.com/support-radar/server/internal/transport/websocket"
+	"github.com/meglior/support-radar/server/internal/config"
+	"github.com/meglior/support-radar/server/internal/domain"
+	"github.com/meglior/support-radar/server/internal/repository/postgres"
+	"github.com/meglior/support-radar/server/internal/repository/redis"
+	"github.com/meglior/support-radar/server/internal/service"
+	"github.com/meglior/support-radar/server/internal/transport/websocket"
 )
 
 type Server struct {

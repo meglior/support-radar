@@ -1,4 +1,4 @@
-module github.com/support-radar/server
+module github.com/meglior/support-radar/server
 
 go 1.22
 

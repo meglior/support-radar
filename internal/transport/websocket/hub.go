@@ -7,7 +7,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/support-radar/server/internal/domain"
+	"github.com/meglior/support-radar/server/internal/domain"
 )
 
 type AgentConnection struct {
