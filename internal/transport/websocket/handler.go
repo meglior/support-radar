@@ -1,127 +1,89 @@
 package websocket
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/meglior/support-radar/server/internal/domain"
-	"github.com/meglior/support-radar/server/internal/repository/postgres"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+// EndpointRepository описывает интерфейс репозитория, необходимый для работы хендлера
+type EndpointRepository interface {
+	UpsertEndpoint(ctx context.Context, hb *domain.Heartbeat, ip string, domainName string) (*domain.Endpoint, error)
 }
 
 type Handler struct {
-	hub  *ConnectionHub
-	repo *postgres.Repository
+	repo     EndpointRepository
+	upgrader websocket.Upgrader
 }
 
-func NewHandler(hub *ConnectionHub, repo *postgres.Repository) *Handler {
+// NewHandler создает новый экземпляр обработчика веб-сокетов
+func NewHandler(repo EndpointRepository) *Handler {
 	return &Handler{
-		hub:  hub,
 		repo: repo,
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			// Разрешаем любые Origin для тестов. В продакшене здесь должна быть валидация
+			CheckOrigin: func(r *http.Request) bool { return true },
+		},
 	}
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+// HandleConnection обрабатывает входящие WebSocket-соединения от агентов
+func (h *Handler) HandleConnection(w http.ResponseWriter, r *http.Request) {
+	// 1. Апгрейдим HTTP соединение до протокола WebSocket
+	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("websocket upgrade failed: %v", err)
+		log.Printf("[WS] Ошибка апгрейда соединения: %v", err)
 		return
 	}
 	defer conn.Close()
 
-	_, msg, err := conn.ReadMessage()
-	if err != nil {
-		log.Printf("failed to read initial heartbeat: %v", err)
-		return
+	// 2. Извлекаем реальный IP-адрес агента (с учетом проксирования вроде Nginx)
+	ip := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		ip = strings.Split(forwarded, ",")[0]
+	} else {
+		ip = strings.Split(ip, ":")[0]
 	}
 
-	var hb domain.Heartbeat
-	if err := json.Unmarshal(msg, &hb); err != nil {
-		log.Printf("malformed heartbeat: %v", err)
-		return
-	}
+	log.Printf("[WS] Агент успешно подключился. IP: %s", ip)
 
-	if len(hb.IntegrityHash) != 64 {
-		h.sendError(conn, domain.ErrInvalidSignature, "integrity_hash must be 64 chars")
-		return
-	}
-
-	if hb.Status != domain.StatusOnline && hb.Status != domain.StatusMaintenance && hb.Status != domain.StatusFallback {
-		h.sendError(conn, domain.ErrMalformedJSON, "invalid status value")
-		return
-	}
-
-	ctx := r.Context()
-	endpoint, err := h.repo.UpsertEndpoint(ctx, &hb, r.RemoteAddr, r.UserAgent())
-	if err != nil {
-		log.Printf("failed to upsert endpoint: %v", err)
-		h.sendError(conn, domain.ErrMalformedJSON, "failed to register endpoint")
-		return
-	}
-
-	ac := h.hub.Register(hb.MachineName, conn)
-	ac.EndpointID = endpoint.ID
-	h.hub.UpdateUUIDMapping(endpoint.ID, hb.MachineName)
-
-	log.Printf("agent connected: %s (id=%s)", hb.MachineName, endpoint.ID)
-
-	ack := map[string]string{"status": "registered", "endpoint_id": endpoint.ID}
-	conn.WriteJSON(ack)
-
+	// 3. Цикл для непрерывного чтения хартбитов от Windows-агента
 	for {
-		conn.SetReadDeadline(time.Now().Add(90 * time.Second))
-		_, msg, err := conn.ReadMessage()
+		_, message, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("websocket error for %s: %v", hb.MachineName, err)
-			}
+			log.Printf("[WS] Агент разорвал соединение или произошла ошибка чтения: %v", err)
 			break
 		}
 
-		var heartbeat domain.Heartbeat
-		if err := json.Unmarshal(msg, &heartbeat); err == nil {
-			if _, err := h.repo.UpsertEndpoint(ctx, &heartbeat, r.RemoteAddr, r.UserAgent()); err != nil {
-				log.Printf("failed to update heartbeat: %v", err)
-			}
-			ac.LastPing = time.Now()
+		// Десериализуем входящий JSON в структуру Heartbeat
+		var hb domain.Heartbeat
+		if err := json.Unmarshal(message, &hb); err != nil {
+			log.Printf("[WS] Ошибка парсинга JSON от агента: %v", err)
 			continue
 		}
 
-		var response domain.CommandResponse
-		if err := json.Unmarshal(msg, &response); err == nil {
-			log.Printf("command response from %s: %s = %s", hb.MachineName, response.CommandID, response.Status)
+		// Дефолтный домен (поскольку в легковесном Heartbeat поля домена нет)
+		domainName := "WORKGROUP"
+
+		// 4. Обновляем статус хоста в базе данных PostgreSQL
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		endpoint, err := h.repo.UpsertEndpoint(ctx, &hb, ip, domainName)
+		cancel()
+
+		if err != nil {
+			log.Printf("[DB] Не удалось обновить данные хоста в базе: %v", err)
 			continue
 		}
 
-		var machineInfo domain.MachineInfo
-		if err := json.Unmarshal(msg, &machineInfo); err == nil {
-			log.Printf("machine info from %s: OS=%s", hb.MachineName, machineInfo.OSInfo.Caption)
-			continue
-		}
-
-		log.Printf("unknown message from %s: %s", hb.MachineName, string(msg))
+		log.Printf("[SUCCESS] Хост '%s' (ID: %s) активен. Статус обновлен в БД.",
+			endpoint.MachineName, endpoint.ID)
 	}
-
-	h.hub.Unregister(hb.MachineName)
-	log.Printf("agent disconnected: %s", hb.MachineName)
-}
-
-func (h *Handler) sendError(conn *websocket.Conn, code, message string) {
-	err := domain.ErrorResponse{
-		ErrorCode:     code,
-		Message:       message,
-		Timestamp:     time.Now().Unix(),
-		RetryAfterSec: 0,
-	}
-	conn.WriteJSON(err)
 }

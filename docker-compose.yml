@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8443:8443"
+    environment:
+      - DB_URL=postgres://radar_user:radar_password@postgres:5432/radar_db?sslmode=disable
+      - REDIS_URL=redis:6379
+      - CONFIG_PATH=config.yaml
+    volumes:
+      - ./certs:/root/certs # Пробрасываем папку с TLS сертификатами
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - radar-network
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=radar_user
+      - POSTGRES_PASSWORD=radar_password
+      - POSTGRES_DB=radar_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - radar-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - radar-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  radar-network:
+    driver: bridge
