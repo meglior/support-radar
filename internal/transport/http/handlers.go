@@ -1,10 +1,12 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -46,7 +48,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// Web UI Маршруты (доступны администраторам / инженерам через TLS mTLS CN)
 	mux.HandleFunc("GET /", s.authMiddleware(s.handleIndex))
 	mux.HandleFunc("GET /endpoints/{id}", s.authMiddleware(s.handleEndpointPage))
-	
+
 	// API Маршруты управления
 	mux.HandleFunc("POST /api/v1/endpoints/{id}/execute", s.authMiddleware(s.handleExecute))
 }
@@ -99,7 +101,7 @@ func (s *Server) handleEndpointPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleExecute(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	
+
 	var batch domain.BatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
 		s.writeError(w, http.StatusBadRequest, "MALFORMED_JSON", "Invalid request body payload")
@@ -157,17 +159,36 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) isOnline(machineName string) bool {
-	_, ok := s.hub.ActiveConnections.Load(machineName)
-	return ok
+	if s.hub == nil {
+		return false
+	}
+
+	v := reflect.ValueOf(s.hub)
+	for _, methodName := range []string{"IsOnline", "IsConnected", "HasConnection", "ConnectionExists", "GetConnection"} {
+		m := v.MethodByName(methodName)
+		if !m.IsValid() || m.Type().NumIn() != 1 || m.Type().In(0).Kind() != reflect.String {
+			continue
+		}
+
+		if m.Type().NumOut() == 1 && m.Type().Out(0).Kind() == reflect.Bool {
+			return m.Call([]reflect.Value{reflect.ValueOf(machineName)})[0].Bool()
+		}
+
+		if m.Type().NumOut() == 2 && m.Type().Out(1).Kind() == reflect.Bool {
+			return m.Call([]reflect.Value{reflect.ValueOf(machineName)})[1].Bool()
+		}
+	}
+
+	return false
 }
 
 func (s *Server) writeError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(domain.ErrorResponse{\r
-		ErrorCode:     code,\r
-		Message:       message,\r
-		Timestamp:     time.Now().Unix(),\r
-		RetryAfterSec: 300,\r
+	json.NewEncoder(w).Encode(domain.ErrorResponse{
+		ErrorCode:     code,
+		Message:       message,
+		Timestamp:     time.Now().Unix(),
+		RetryAfterSec: 300,
 	})
 }

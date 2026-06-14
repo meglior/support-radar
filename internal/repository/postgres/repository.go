@@ -14,6 +14,7 @@ type Repository struct {
 	db *sql.DB
 }
 
+// New создает новое подключение к базе данных PostgreSQL
 func New(dbURL string) (*Repository, error) {
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -31,11 +32,13 @@ func New(dbURL string) (*Repository, error) {
 	return &Repository{db: db}, nil
 }
 
+// Close закрывает соединение с БД
 func (r *Repository) Close() error {
 	return r.db.Close()
 }
 
-func (r *Repository) UpsertEndpoint(ctx context.Context, hb *domain.Heartbeat) (*domain.Endpoint, error) {
+// UpsertEndpoint теперь принимает ip и domain напрямую, так как в легковесном Heartbeat их нет
+func (r *Repository) UpsertEndpoint(ctx context.Context, hb *domain.Heartbeat, ip string, domainName string) (*domain.Endpoint, error) {
 	query := `
 		INSERT INTO endpoints (machine_name, active_ip, domain_name, agent_version, integrity_hash, status, last_heartbeat)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW())
@@ -53,8 +56,8 @@ func (r *Repository) UpsertEndpoint(ctx context.Context, hb *domain.Heartbeat) (
 	var ep domain.Endpoint
 	err := r.db.QueryRowContext(ctx, query,
 		hb.MachineName,
-		hb.Network.ActiveIP,
-		hb.Network.Domain,
+		ip,         // Берем из переданного аргумента
+		domainName, // Берем из переданного аргумента
 		hb.AgentVersion,
 		hb.IntegrityHash,
 		domain.StatusOnline,
@@ -70,6 +73,7 @@ func (r *Repository) UpsertEndpoint(ctx context.Context, hb *domain.Heartbeat) (
 	return &ep, nil
 }
 
+// GetAllEndpoints возвращает список всех зарегистрированных хостов
 func (r *Repository) GetAllEndpoints(ctx context.Context) ([]domain.Endpoint, error) {
 	query := `SELECT id, machine_name, active_ip, domain_name, agent_version, integrity_hash, status, last_heartbeat, created_at FROM endpoints ORDER BY machine_name ASC`
 
@@ -90,6 +94,7 @@ func (r *Repository) GetAllEndpoints(ctx context.Context) ([]domain.Endpoint, er
 	return endpoints, rows.Err()
 }
 
+// GetEndpointByID ищет конкретный хост по его UUID
 func (r *Repository) GetEndpointByID(ctx context.Context, id string) (*domain.Endpoint, error) {
 	query := `SELECT id, machine_name, active_ip, domain_name, agent_version, integrity_hash, status, last_heartbeat, created_at FROM endpoints WHERE id = $1`
 
@@ -109,6 +114,7 @@ func (r *Repository) GetEndpointByID(ctx context.Context, id string) (*domain.En
 	return &ep, nil
 }
 
+// InsertAuditLog записывает действие инженера в аудит-лог
 func (r *Repository) InsertAuditLog(ctx context.Context, log *domain.AuditLog) error {
 	query := `
 		INSERT INTO audit_logs (engineer_username, engineer_role, endpoint_id, command_id, parameters, execution_status)
@@ -125,6 +131,7 @@ func (r *Repository) InsertAuditLog(ctx context.Context, log *domain.AuditLog) e
 	).Scan(&log.ID, &log.Timestamp)
 }
 
+// GetAuditLogsByEndpoint возвращает последние 50 записей аудита для конкретного хоста
 func (r *Repository) GetAuditLogsByEndpoint(ctx context.Context, endpointID string) ([]domain.AuditLog, error) {
 	query := `
 		SELECT id, timestamp, engineer_username, engineer_role, endpoint_id, command_id, parameters, execution_status

@@ -62,7 +62,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	endpoint, err := h.repo.UpsertEndpoint(ctx, &hb)
+	endpoint, err := h.repo.UpsertEndpoint(ctx, &hb, r.RemoteAddr, r.UserAgent())
 	if err != nil {
 		log.Printf("failed to upsert endpoint: %v", err)
 		h.sendError(conn, domain.ErrMalformedJSON, "failed to register endpoint")
@@ -90,7 +90,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		var heartbeat domain.Heartbeat
 		if err := json.Unmarshal(msg, &heartbeat); err == nil {
-			if _, err := h.repo.UpsertEndpoint(ctx, &heartbeat); err != nil {
+			if _, err := h.repo.UpsertEndpoint(ctx, &heartbeat, r.RemoteAddr, r.UserAgent()); err != nil {
 				log.Printf("failed to update heartbeat: %v", err)
 			}
 			ac.LastPing = time.Now()

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	redisclient "github.com/go-redis/redis/v9"
+	redisclient "github.com/go-redis/redis/v8"
 )
 
 type Client struct {
