@@ -1,0 +1,21 @@
+[package]
+name = "support-radar-agent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Асинхронный движок (чтобы агент не блокировал систему)
+tokio = { version = "1.0", features = ["full"] }
+
+# Работа с WebSocket
+tokio-tungstenite = { version = "0.21", features = ["rustls-tls-webpki-roots"] }
+
+# Клиент безопасности TLS (для нашего mTLS)
+rustls = "0.21"
+
+# Сериализация / десериализация JSON (чтобы собирать Heartbeat)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Системный сборщик метрик (процессор, память, диски)
+sysinfo = "0.30"
