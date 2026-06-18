@@ -33,9 +33,7 @@
 Часть 2: Структура проекта Rust-агента
 Hybrid Heartbeat и требованиями по безопасности (mTLS, Impersonation, Anti-tampering) структура проекта на Rust:
 
-# support-radar-agent
-
-## Структура проекта
+## support-radar-agent
 
 ```bash
 support-radar-agent/
@@ -70,37 +68,37 @@ support-radar-agent/
 Описание модулей
 Корневые файлы
 
-Cargo.toml — зависимости проекта (tokio, windows-sys, serde, rustls, sha2 и др.)
-build.rs — скрипт сборки (компиляция манифеста Windows Service и ресурсов)
+`Cargo.toml` — зависимости проекта (tokio, windows-sys, serde, rustls, sha2 и др.)
+`build.rs` — скрипт сборки (компиляция манифеста Windows Service и ресурсов)
 
-src/
+`src/`
 
-main.rs — точка входа приложения, инициализация Service Control Manager (SCM)
-app.rs — основной оркестратор: управление жизненным циклом и async-рантаймом
+`main.rs` — точка входа приложения, инициализация Service Control Manager (SCM)
+`app.rs` — основной оркестратор: управление жизненным циклом и async-рантаймом
 
-domain/ — бизнес-логика и контракты
+`domain/` — бизнес-логика и контракты
 
-models.rs — основные модели (Heartbeat, MachineInfo)
-commands.rs — статический маппинг Command ID
+`models.rs` — основные модели (Heartbeat, MachineInfo)
+`commands.rs` — статический маппинг Command ID
 
-infrastructure/ — низкоуровневая инфраструктура
-network/
+`infrastructure/` — низкоуровневая инфраструктура
+`network/`
 
-mtls.rs — работа с Windows Certificate Store и mTLS 1.3
-websocket.rs — WebSocket-клиент с exponential backoff
+`mtls.rs` — работа с Windows Certificate Store и `mTLS 1.3`
+`websocket.rs` — WebSocket-клиент с exponential backoff
 
-windows/
+`windows/`
 
-impersonation.rs — имперсонация пользователей (WTSQueryUserToken, дублирование токенов)
-system_info.rs — сбор системных метрик (CPU, диск C:, RAM)
-process.rs — безопасный запуск процессов через CreateProcessAsUserW
+`impersonation.rs` — имперсонация пользователей (WTSQueryUserToken, дублирование токенов)
+`system_info.rs` — сбор системных метрик (CPU, диск C:, RAM)
+`process.rs` — безопасный запуск процессов через CreateProcessAsUserW
 
-security/ — безопасность и отказоустойчивость
+`security/` — безопасность и отказоустойчивость
 
-anti_tampering.rs — фоновый мониторинг целостности (SHA-256)
-fallback.rs — Ed25519 верификация и аварийный канал обновлений (update.json)
+`anti_tampering.rs` — фоновый мониторинг целостности (SHA-256)
+`fallback.rs` — Ed25519 верификация и аварийный канал обновлений (update.json)
 
-modules/ — функциональные модули
+`modules/` — функциональные модули
 
-remediation.rs — выполнение команд remediation (CMD_FIX_DNS, CMD_SYNC_TIME и др.)
-diagnostics.rs — сбор диагностической информации (SlowLogon, GPResult и т.д.)
+`remediation.rs` — выполнение команд remediation (CMD_FIX_DNS, CMD_SYNC_TIME и др.)
+`diagnostics.rs` — сбор диагностической информации (SlowLogon, GPResult и т.д.)
