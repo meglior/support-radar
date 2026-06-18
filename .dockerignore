@@ -23,3 +23,9 @@
 **/values.dev.yaml
 LICENSE
 README.md
+# Rust artifacts
+**/target/
+**/debug/
+**/*.pdb
+# Локальные сертификаты (чтобы случайно не запечь их в продакшн-образ)
+**/certs/
