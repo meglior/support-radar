@@ -31,33 +31,76 @@
 Все коммуникации защищены двусторонним TLS. Клиентские сертификаты выпускаются автоматически через **AD Auto-Enrollment**. Для критических ситуаций предусмотрен **Emergency Fallback** сервер, работающий по модели статического манифеста, подписанного Root-ключом разработчика.
 
 Часть 2: Структура проекта Rust-агента
-Для обеспечения полной совместимости с моделью Hybrid Heartbeat и требованиями по безопасности (mTLS, Impersonation, Anti-tampering), рекомендуется следующая структура проекта на Rust:
+Hybrid Heartbeat и требованиями по безопасности (mTLS, Impersonation, Anti-tampering) структура проекта на Rust:
+
+# support-radar-agent
+
+## Структура проекта
+
+```bash
 support-radar-agent/
-├── Cargo.toml                # Зависимости: tokio, serde, windows-sys, rustls, sha2
+├── Cargo.toml
+├── build.rs
 ├── src/
-│   ├── main.rs               # Инициализация службы Windows и асинхронного рантайма
-│   ├── client/
+│   ├── main.rs
+│   ├── app.rs
+│   ├── domain/
 │   │   ├── mod.rs
-│   │   ├── mtls.rs           # Настройка mTLS 1.3 и работа с Windows Certificate Store
-│   │   └── websocket.rs      # Логика WebSocket, Ping/Pong и Exponential Backoff
-│   ├── protocol/
+│   │   ├── models.rs
+│   │   └── commands.rs
+│   ├── infrastructure/
 │   │   ├── mod.rs
-│   │   ├── heartbeat.rs      # Структура Heartbeat (snake_case, Unix Timestamp)
-│   │   └── machine_info.rs   # Детальная структура MachineInfo (Smart Update)
-│   ├── commands/
-│   │   ├── mod.rs            # Конструкция Match для ID команд
-│   │   ├── executor.rs       # Запуск PowerShell из RAM без записи на диск
-│   │   └── impersonation.rs  # Логика WTSGetActiveConsoleSessionId и CreateProcessAsUserW
+│   │   ├── network/
+│   │   │   ├── mtls.rs
+│   │   │   └── websocket.rs
+│   │   └── windows/
+│   │       ├── impersonation.rs
+│   │       ├── system_info.rs
+│   │       └── process.rs
 │   ├── security/
 │   │   ├── mod.rs
-│   │   ├── integrity.rs      # Фоновый поток Anti-tampering (SHA-256 проверка)
-│   │   └── fallback.rs       # Логика опроса Emergency Fallback через Ed25519
-│   └── utils/
-│       └── logger.rs         # Запись событий в Windows Event Log (Application)
-└── build.rs                  # Сборка ресурсов (иконка, манифест администратора)
-Ключевые особенности этой структуры:
-Модуль protocol/heartbeat.rs: Должен содержать struct Heartbeat с полями в snake_case, где timestamp имеет тип i64, а free_disk_space_gb — f64, как того требует спецификация сетевого протокола.
-Модуль security/integrity.rs: Реализует логику проверки хэша бинарника каждые 10 минут перед отправкой Smart Update
-.
-Модуль commands/impersonation.rs: Инкапсулирует небезопасные (unsafe) вызовы windows-sys для переключения контекста на активного пользователя, обеспечивая изоляцию привилегий при работе с пользовательскими данными.
-Сетевой слой client/websocket.rs: Использует асинхронные каналы (Channels) для обмена сообщениями, предотвращая блокировку основного потока службы при сетевых задержка
+│   │   ├── anti_tampering.rs
+│   │   └── fallback.rs
+│   └── modules/
+│       ├── mod.rs
+│       ├── remediation.rs
+│       └── diagnostics.rs
+└── tests/
+```
+Описание модулей
+Корневые файлы
+
+Cargo.toml — зависимости проекта (tokio, windows-sys, serde, rustls, sha2 и др.)
+build.rs — скрипт сборки (компиляция манифеста Windows Service и ресурсов)
+
+src/
+
+main.rs — точка входа приложения, инициализация Service Control Manager (SCM)
+app.rs — основной оркестратор: управление жизненным циклом и async-рантаймом
+
+domain/ — бизнес-логика и контракты
+
+models.rs — основные модели (Heartbeat, MachineInfo)
+commands.rs — статический маппинг Command ID
+
+infrastructure/ — низкоуровневая инфраструктура
+network/
+
+mtls.rs — работа с Windows Certificate Store и mTLS 1.3
+websocket.rs — WebSocket-клиент с exponential backoff
+
+windows/
+
+impersonation.rs — имперсонация пользователей (WTSQueryUserToken, дублирование токенов)
+system_info.rs — сбор системных метрик (CPU, диск C:, RAM)
+process.rs — безопасный запуск процессов через CreateProcessAsUserW
+
+security/ — безопасность и отказоустойчивость
+
+anti_tampering.rs — фоновый мониторинг целостности (SHA-256)
+fallback.rs — Ed25519 верификация и аварийный канал обновлений (update.json)
+
+modules/ — функциональные модули
+
+remediation.rs — выполнение команд remediation (CMD_FIX_DNS, CMD_SYNC_TIME и др.)
+diagnostics.rs — сбор диагностической информации (SlowLogon, GPResult и т.д.)
